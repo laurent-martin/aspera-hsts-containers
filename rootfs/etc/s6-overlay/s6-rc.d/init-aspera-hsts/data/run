@@ -64,10 +64,19 @@ if [ -n "${XFER_AUTHORIZED_KEYS}" ]; then
   echo "[init] Injected authorized_keys for xfer"
 fi
 
-# Docroot of the transfer user (required by Node API file operations)
-XFER_DOCROOT="${XFER_DOCROOT:-/home/xfer}"
-mkdir -p "${XFER_DOCROOT}"
-asconf "set_user_data;user_name,xfer;absolute,${XFER_DOCROOT}"
+# Transfer user xfer, either:
+# - docroot: Node API file operations by the Node user (Gen3)
+# - no docroot, file restriction(s) separated by |: required to create access keys (Gen4).
+#   URL form (file:///<path>) matches access key storage, plain path form matches SSH transfers.
+if [ -n "${XFER_DOCROOT}" ]; then
+  mkdir -p "${XFER_DOCROOT}"
+  asconf "set_user_data;user_name,xfer;absolute,${XFER_DOCROOT};file_restriction,AS_NULL"
+  echo "[init] xfer: docroot ${XFER_DOCROOT}"
+else
+  XFER_RESTRICTION="${XFER_RESTRICTION:-file:////home/xfer/*|/home/xfer/*}"
+  asconf "set_user_data;user_name,xfer;absolute,AS_NULL;file_restriction,|${XFER_RESTRICTION}"
+  echo "[init] xfer: no docroot, restriction ${XFER_RESTRICTION}"
+fi
 
 # License: classic license file, or ALEE entitlement registration
 if [ -n "${ASPERA_LICENSE}" ]; then

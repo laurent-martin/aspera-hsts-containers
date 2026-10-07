@@ -46,7 +46,7 @@ At each start, `init-aspera-hsts`:
 - populates empty volumes from the image defaults and removes stale PID files
 - points `asperanoded` to the Redis container (`db_host`, `db_port`)
 - generates, on first start, the Node API TLS key pair and the SSH host keys (stored in the `etc` volume)
-- writes `XFER_AUTHORIZED_KEYS` to `xfer`'s `authorized_keys` and sets `xfer`'s docroot
+- writes `XFER_AUTHORIZED_KEYS` to `xfer`'s `authorized_keys` and configures `xfer`'s storage (see [Node API: access keys or docroot](#node-api-access-keys-or-docroot))
 - installs the license (if provided)
 - creates or updates the Node API user `NODE_USER`, mapped to `xfer`
 
@@ -58,7 +58,7 @@ At each start, `init-aspera-hsts`:
 | `aspera-var` | aspera-hsts: `/opt/aspera/var` | Runtime state, logs, token keys |
 | `redis-data` | asperaredisd: `/data` | Redis database (Node API users, transfer history) |
 
-Transferred files are stored in `XFER_DOCROOT` (default `/home/xfer`), which is not a volume.
+Transferred files are stored in `/home/xfer` by default, which is not a volume.
 
 ### Logging
 
@@ -110,9 +110,31 @@ See [`.env.example`](.env.example).
 | `ASCP_SSH_PORT` | `33001` | SSH port (host) |
 | `FASP_UDP_PORT` | `33001` | FASP UDP port (host) |
 | `XFER_AUTHORIZED_KEYS` | *(empty)* | SSH public key(s) for `xfer` |
-| `XFER_DOCROOT` | `/home/xfer` | Docroot of `xfer` |
+| `XFER_DOCROOT` | *(empty)* | Docroot of `xfer`: Node API Gen3 mode |
+| `XFER_RESTRICTION` | `file:////home/xfer/*\|/home/xfer/*` | File restriction(s) of `xfer`, separated by `\|`, when `XFER_DOCROOT` is empty: access key mode |
 | `ASPERA_LICENSE` | *(empty)* | Content of a license file |
 | `ASPERA_CUSTOMER_ID`, `ASPERA_ENTITLEMENT_ID` | *(empty)* | ALEE entitlement, registered with `alee-admin` |
+
+## Node API: access keys or docroot
+
+HSTS supports two ways to give the Node API access to the storage of the transfer user `xfer`, set by the init at each start:
+
+| | Access keys (default) | Docroot |
+| --- | --- | --- |
+| Setting | `XFER_DOCROOT` empty: no docroot, file restriction(s) `XFER_RESTRICTION` | `XFER_DOCROOT` set |
+| SSH transfers (`ascp`) | Absolute paths matching a restriction, e.g. `xfer@host:/home/xfer/` | Paths relative to the docroot, e.g. `xfer@host:/` |
+| Access keys (Gen4, used by Aspera on Cloud, Faspex 5, `ascli node access_keys`) | Yes: storage paths must match a restriction | No: `docroot must be disabled in aspera.conf to create access_keys` |
+| File operations by the Node user (Gen3: `/files/browse`, `ascli node browse`) | No: `Invalid doc root path` | Yes |
+
+Restrictions are matched against URLs for access key storage (`file:////home/xfer/*`) and against plain paths for SSH transfers (`/home/xfer/*`): the default sets both.
+
+For example, with `ascli`:
+
+```bash
+ascli node --url=https://localhost:9092 --username=nodeuser --password=... \
+  access_keys create @: id=my_ak secret=my_secret storage.type=local storage.path=/home/xfer
+ascli node --url=https://localhost:9092 --username=my_ak --password=my_secret access_keys do self browse /
+```
 
 ## License
 
