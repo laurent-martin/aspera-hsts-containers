@@ -1,0 +1,99 @@
+#!/command/with-contenv sh
+# s6 oneshot: runs once at container start, before the services.
+set -e
+
+AS_ETC=/opt/aspera/etc
+AS_VAR=/opt/aspera/var
+
+# Apply an asconfigurator command, failing if it does not report success
+asconf() {
+  result=$(asconfigurator -x "$1")
+  case "${result}" in
+    *success*) ;;
+    *) echo "[init] asconfigurator failed: $1: ${result}" >&2; return 1 ;;
+  esac
+}
+
+# Populate persistent volumes from image defaults if empty (first start)
+if [ ! -f "${AS_ETC}/aspera.conf" ]; then
+  echo "[init] First start: populating ${AS_ETC} from image defaults"
+  cp -a /opt/aspera/etc.default/. "${AS_ETC}/"
+fi
+if [ -z "$(ls -A "${AS_VAR}")" ]; then
+  echo "[init] First start: populating ${AS_VAR} from image defaults"
+  cp -a /opt/aspera/var.default/. "${AS_VAR}/"
+fi
+
+# Runtime dirs, and PID files left over from a previous container (var is persistent)
+mkdir -p "${AS_VAR}/run/aspera" "${AS_VAR}/log"
+chown asperadaemon:aspadmins "${AS_VAR}/run/aspera" "${AS_VAR}/log"
+rm -f "${AS_VAR}"/run/aspera/*.pid
+
+# Redis runs in its own container
+asconf "set_server_data;db_host,${ASPERA_DB_HOST:-asperaredisd};db_port,${ASPERA_DB_PORT:-31415}"
+
+# Per-deployment TLS key pair for the Node API (same as the RPM post-install, which is removed from the image)
+if [ ! -f "${AS_ETC}/aspera_server_cert.pem" ]; then
+  echo "[init] Generating Node API TLS certificate"
+  /opt/aspera/bin/openssl req -x509 -new -batch -nodes -newkey rsa:2048 -days 1095 \
+    -config "${AS_ETC}/openssl.cnf" \
+    -keyout "${AS_ETC}/aspera_server_key.pem" \
+    -out "${AS_ETC}/aspera_server_cert.pem" 2>/dev/null
+  cat "${AS_ETC}/aspera_server_key.pem" >> "${AS_ETC}/aspera_server_cert.pem"
+  chown asperadaemon:aspadmins "${AS_ETC}"/aspera_server_*.pem
+  chmod 600 "${AS_ETC}"/aspera_server_*.pem
+fi
+
+# Generate SSH host keys in persistent volume (survives container restarts)
+SSH_KEY_DIR="${AS_ETC}/ssh"
+mkdir -p "${SSH_KEY_DIR}"
+for type in rsa ecdsa ed25519; do
+  keyfile="${SSH_KEY_DIR}/ssh_host_${type}_key"
+  if [ ! -f "${keyfile}" ]; then
+    echo "[init] Generating SSH host key: ${keyfile}"
+    ssh-keygen -q -t "${type}" -f "${keyfile}" -N ''
+  fi
+done
+
+# Inject authorized_keys for xfer user from environment
+if [ -n "${XFER_AUTHORIZED_KEYS}" ]; then
+  mkdir -p /home/xfer/.ssh
+  printf '%s\n' "${XFER_AUTHORIZED_KEYS}" > /home/xfer/.ssh/authorized_keys
+  chmod 600 /home/xfer/.ssh/authorized_keys
+  chown xfer:xfer /home/xfer/.ssh/authorized_keys
+  echo "[init] Injected authorized_keys for xfer"
+fi
+
+# Docroot of the transfer user (required by Node API file operations)
+XFER_DOCROOT="${XFER_DOCROOT:-/home/xfer}"
+mkdir -p "${XFER_DOCROOT}"
+asconf "set_user_data;user_name,xfer;absolute,${XFER_DOCROOT}"
+
+# License: classic license file, or ALEE entitlement registration
+if [ -n "${ASPERA_LICENSE}" ]; then
+  printf '%s\n' "${ASPERA_LICENSE}" > "${AS_ETC}/aspera-license"
+  echo "[init] Installed license from ASPERA_LICENSE"
+elif [ -n "${ASPERA_CUSTOMER_ID}" ] && [ -n "${ASPERA_ENTITLEMENT_ID}" ]; then
+  [ -f "${AS_ETC}/aspera-license" ] || cp "${AS_ETC}/alee.aspera-license" "${AS_ETC}/aspera-license"
+  echo "[init] Registering ALEE entitlement"
+  alee-admin register "${ASPERA_CUSTOMER_ID}" "${ASPERA_ENTITLEMENT_ID}" \
+    || echo "[init] WARNING: ALEE registration failed" >&2
+fi
+if [ ! -f "${AS_ETC}/aspera-license" ]; then
+  echo "[init] WARNING: no license (${AS_ETC}/aspera-license): transfers will be refused" >&2
+fi
+
+# Provision Node API user, mapped to xfer (password kept in sync with NODE_PASS)
+if [ -n "${NODE_PASS}" ]; then
+  NODE_USER="${NODE_USER:-nodeuser}"
+  if asnodeadmin -l 2>/dev/null | grep -qw -- "${NODE_USER}"; then
+    asnodeadmin -m -u "${NODE_USER}" -p "${NODE_PASS}" -x xfer
+  else
+    echo "[init] Provisioning node user: ${NODE_USER}"
+    asnodeadmin -a -u "${NODE_USER}" -p "${NODE_PASS}" -x xfer
+  fi
+else
+  echo "[init] WARNING: NODE_PASS not set: no Node API user provisioned" >&2
+fi
+
+echo "[init] Done."

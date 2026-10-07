@@ -1,0 +1,80 @@
+name: aspera-hsts
+
+# ── Shared volumes ────────────────────────────────────────────────────────────
+volumes:
+  aspera-etc:
+    driver: local
+  aspera-var:
+    driver: local
+  redis-data:
+    driver: local
+
+# ── Network ───────────────────────────────────────────────────────────────────
+networks:
+  aspera-net:
+    driver: bridge
+
+# ── Services ──────────────────────────────────────────────────────────────────
+services:
+
+  # ----------------------------------------------------------------------------
+  # Redis — standard image, port 31415 to match Aspera default config
+  # ----------------------------------------------------------------------------
+  asperaredisd:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks:
+      aspera-net:
+        aliases:
+          - asperaredisd
+    command: >
+      redis-server
+      --port 31415
+      --save 60 10000
+      --loglevel notice
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "31415", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  # ----------------------------------------------------------------------------
+  # aspera-hsts — asperanoded (REST API, HTTPS) + sshd/ascp
+  # Image is built by `rake build`.
+  # Provisions the Node API user from NODE_USER / NODE_PASS at each start.
+  # Injects SSH public key(s) for xfer from XFER_AUTHORIZED_KEYS.
+  # ----------------------------------------------------------------------------
+  aspera-hsts:
+    image: ${REGISTRY:-localhost}/aspera-hsts:${TAG:-latest}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsk", "-o", "/dev/null", "https://localhost:9092/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    depends_on:
+      asperaredisd:
+        condition: service_healthy
+    networks:
+      - aspera-net
+    ports:
+      - "${ASCP_SSH_PORT:-33001}:22"
+      - "${FASP_UDP_PORT:-33001}:33001/udp"
+      - "${NODE_PORT:-9092}:9092"
+    volumes:
+      - aspera-etc:/opt/aspera/etc
+      - aspera-var:/opt/aspera/var
+    environment:
+      ASPERA_DB_HOST: asperaredisd
+      ASPERA_DB_PORT: "31415"
+      NODE_USER: ${NODE_USER:-nodeuser}
+      NODE_PASS: ${NODE_PASS:-}
+      XFER_AUTHORIZED_KEYS: ${XFER_AUTHORIZED_KEYS:-}
+      XFER_DOCROOT: ${XFER_DOCROOT:-/home/xfer}
+      ASPERA_LICENSE: ${ASPERA_LICENSE:-}
+      ASPERA_CUSTOMER_ID: ${ASPERA_CUSTOMER_ID:-}
+      ASPERA_ENTITLEMENT_ID: ${ASPERA_ENTITLEMENT_ID:-}

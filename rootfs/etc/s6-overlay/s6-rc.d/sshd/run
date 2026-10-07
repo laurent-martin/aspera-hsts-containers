@@ -1,0 +1,3 @@
+#!/command/execlineb -P
+# sshd: OpenSSH daemon for FASP/ascp transfers (xfer user, key auth only)
+/usr/sbin/sshd -D -e

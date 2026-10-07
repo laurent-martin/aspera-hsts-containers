@@ -1,0 +1,34 @@
+# sshd configuration for transfer-ssh container
+# Only key-based authentication, aspshell enforced as subsystem shell.
+
+Port 22
+Protocol 2
+
+# Host keys — stored in the persistent volume so they survive container restarts
+HostKey /opt/aspera/etc/ssh/ssh_host_rsa_key
+HostKey /opt/aspera/etc/ssh/ssh_host_ecdsa_key
+HostKey /opt/aspera/etc/ssh/ssh_host_ed25519_key
+
+# Auth
+PermitRootLogin no
+PasswordAuthentication no
+ChallengeResponseAuthentication no
+PubkeyAuthentication yes
+# Red Hat's OpenSSH build does not support UsePAM no
+UsePAM yes
+AuthorizedKeysFile .ssh/authorized_keys
+
+# Only allow xfer user
+AllowUsers xfer
+
+# Use aspshell as the forced command shell for ascp sessions
+Subsystem sftp /opt/aspera/bin/aspshell -t
+
+# Logging (goes to stderr → Docker stdout via -e flag)
+SyslogFacility AUTH
+LogLevel INFO
+
+# Tune
+UseDNS no
+PrintMotd no
+AcceptEnv ASPERA_SCP_*

@@ -1,0 +1,9 @@
+# Aspera HSTS — private files (RPM, keys, certs)
+/private/
+
+# Docker env override (contains secrets)
+.env
+
+# Ruby
+.bundle/
+vendor/bundle/

@@ -1,0 +1,4 @@
+#!/command/execlineb -P
+# asperanoded: Node REST API
+s6-setuidgid asperadaemon
+/opt/aspera/sbin/asperanoded -f /opt/aspera/etc/aspera.conf --no-daemon
