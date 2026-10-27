@@ -48,14 +48,20 @@ namespace :compose do
 end
 
 # ── Documentation ─────────────────────────────────────────────────────────────
-# Folder of gfm2pdf-toolchain: next to this repository by default
-GFM2PDF_DIR = ENV.fetch('GFM2PDF_DIR', File.expand_path('../gfm2pdf-toolchain', __dir__))
-
-file 'README.pdf' => 'README.md' do |t|
-  sh 'ruby', File.join(GFM2PDF_DIR, 'lib', 'pandoc.rb'), 'pdf', t.source, t.name
+# Value of an environment variable required for the documentation
+def required_env(name)
+  ENV.fetch(name) { raise "The environment variable #{name} is not set. Please set it and try again." }
 end
 
-desc 'Generate README.pdf from README.md (gfm2pdf-toolchain in GFM2PDF_DIR)'
+file 'README.pdf' => 'README.md' do |t|
+  # Folder of gfm2pdf-toolchain 1.x, and look of the PDF (theme folder, used by the toolchain)
+  pandoc = File.join(required_env('GFM2PDF_HOME'), 'lib', 'pandoc.rb')
+  required_env('GFM2PDF_THEME')
+  sh 'ruby', pandoc, 'version', '>= 1.0.0.pre, < 2'
+  sh 'ruby', pandoc, 'pdf', t.source, t.name
+end
+
+desc 'Generate README.pdf from README.md (env vars: GFM2PDF_HOME, GFM2PDF_THEME)'
 task pdf: 'README.pdf'
 
 # ── Default ───────────────────────────────────────────────────────────────────

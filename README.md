@@ -94,7 +94,7 @@ rake compose:logs   # docker compose logs -f
 rake pdf            # Generate README.pdf from README.md
 ```
 
-`rake pdf` uses gfm2pdf-toolchain: set `GFM2PDF_DIR` to its folder (default: `../gfm2pdf-toolchain`, next to this repository), and `GFM2PDF_ENGINE` to select the PDF engine (`latex` or `typst`).
+`rake pdf` uses gfm2pdf-toolchain 1.x: set `GFM2PDF_HOME` to its folder, `GFM2PDF_THEME` to the folder of the theme of the PDF (cover and fonts, e.g. `build/doc/pdf_theme` in `aspera-cli`), and optionally `GFM2PDF_ENGINE` to select the PDF engine (`latex` or `typst`).
 
 ## Environment variables
 
@@ -132,8 +132,8 @@ For example, with `ascli`:
 
 ```bash
 ascli node --url=https://localhost:9092 --username=nodeuser --password=... \
-  access_keys create @: id=my_ak secret=my_secret storage.type=local storage.path=/home/xfer
-ascli node --url=https://localhost:9092 --username=my_ak --password=my_secret access_keys do self browse /
+  access_keys create @: id=<ACCESS_KEY_ID> secret=<ACCESS_KEY_SECRET> storage.type=local storage.path=/home/xfer
+ascli node --url=https://localhost:9092 --username=<ACCESS_KEY_ID> --password=<ACCESS_KEY_SECRET> access_keys do self browse /
 ```
 
 ## License
